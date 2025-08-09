@@ -2,69 +2,16 @@
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8" />
-  <title>Registro de Pontos AR com WebXR Hit Test</title>
+  <title>Teste AR Básico</title>
   <script src="https://aframe.io/releases/1.7.0/aframe.min.js"></script>
 </head>
-<body style="margin:0; overflow:hidden;">
+<body style="margin: 0; overflow: hidden;">
   <a-scene
-    vr-mode-ui="enabled: true"
-    embedded
-    webxr="optionalFeatures: hit-test"
-    ar-hit-test
+    webxr="optionalFeatures: hit-test;" 
+    ar-hit-test="target: #myobject;"
   >
-    <a-entity id="reticle"
-              geometry="primitive: ring; radiusInner: 0.05; radiusOuter: 0.06"
-              material="color: yellow; shader: flat"
-              visible="false">
-    </a-entity>
-
-    <a-entity id="pontos"></a-entity>
-
+    <a-box id="myobject" position="0 0.5 -2" rotation="0 45 0" color="#4CC3D9"></a-box>
     <a-camera position="0 1.6 0"></a-camera>
   </a-scene>
-
-  <script>
-    const scene = document.querySelector('a-scene');
-    const reticle = document.getElementById('reticle');
-    const pontosEl = document.getElementById('pontos');
-
-    scene.addEventListener('ar-hit-test-start', () => {
-      reticle.setAttribute('visible', true);
-    });
-
-    scene.addEventListener('ar-hit-test-update', (event) => {
-      const { position, rotation } = event.detail;
-      reticle.object3D.position.copy(position);
-      reticle.object3D.rotation.copy(rotation);
-      reticle.setAttribute('visible', true);
-    });
-
-    scene.addEventListener('ar-hit-test-end', () => {
-      reticle.setAttribute('visible', false);
-    });
-
-    // Para garantir ativação de sessão AR, escutamos o evento 'enter-vr'
-    scene.addEventListener('enter-vr', () => {
-      console.log('Sessão AR iniciada');
-    });
-
-    scene.addEventListener('click', () => {
-      if (!reticle.getAttribute('visible')) {
-        alert('Aponte para uma superfície para registrar o ponto.');
-        return;
-      }
-
-      const pos = reticle.object3D.position.clone();
-
-      const sphere = document.createElement('a-sphere');
-      sphere.setAttribute('radius', '0.1');
-      sphere.setAttribute('color', 'blue');
-      sphere.object3D.position.copy(pos);
-
-      pontosEl.appendChild(sphere);
-
-      console.log('Ponto registrado em:', pos);
-    });
-  </script>
 </body>
 </html>
