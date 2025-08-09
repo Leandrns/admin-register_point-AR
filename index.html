@@ -7,19 +7,17 @@
 </head>
 <body style="margin:0; overflow:hidden;">
   <a-scene
-    vr-mode-ui="enabled: false"
+    vr-mode-ui="enabled: true"
     embedded
     webxr="optionalFeatures: hit-test"
     ar-hit-test
   >
-    <!-- Retículo para mostrar onde o hit test detecta superfície -->
-    <a-entity id="reticle" 
-              geometry="primitive: ring; radiusInner: 0.05; radiusOuter: 0.06" 
+    <a-entity id="reticle"
+              geometry="primitive: ring; radiusInner: 0.05; radiusOuter: 0.06"
               material="color: yellow; shader: flat"
               visible="false">
     </a-entity>
 
-    <!-- Container dos pontos criados -->
     <a-entity id="pontos"></a-entity>
 
     <a-camera position="0 1.6 0"></a-camera>
@@ -30,12 +28,10 @@
     const reticle = document.getElementById('reticle');
     const pontosEl = document.getElementById('pontos');
 
-    // Quando o sistema de hit-test está ativo, o reticle fica visível
     scene.addEventListener('ar-hit-test-start', () => {
       reticle.setAttribute('visible', true);
     });
 
-    // Atualiza posição e rotação do reticle conforme a superfície detectada
     scene.addEventListener('ar-hit-test-update', (event) => {
       const { position, rotation } = event.detail;
       reticle.object3D.position.copy(position);
@@ -43,12 +39,15 @@
       reticle.setAttribute('visible', true);
     });
 
-    // Reticle some quando não há superfície detectada
     scene.addEventListener('ar-hit-test-end', () => {
       reticle.setAttribute('visible', false);
     });
 
-    // Ao tocar na tela, registra um ponto na posição atual do reticle
+    // Para garantir ativação de sessão AR, escutamos o evento 'enter-vr'
+    scene.addEventListener('enter-vr', () => {
+      console.log('Sessão AR iniciada');
+    });
+
     scene.addEventListener('click', () => {
       if (!reticle.getAttribute('visible')) {
         alert('Aponte para uma superfície para registrar o ponto.');
