@@ -7,7 +7,7 @@
 			content="width=device-width,initial-scale=1,minimum-scale=1,viewport-fit=cover"
 		/>
 		<title>WebXR AR Hit Test + QR Marker com fluxo separado</title>
-        <script src="https://unpkg.com/jsqr/dist/jsQR.js"></script>
+		<script src="https://unpkg.com/jsqr/dist/jsQR.js"></script>
 		<style>
 			html,
 			body {
@@ -74,7 +74,6 @@
 		<div id="info" style="display: none">
 			<strong>WebXR AR Hit Test + QR Marker</strong><br />
 			Toque no retículo para colocar um cubo.<br />
-			<button id="start-ar-btn" style="margin-top: 8px">Iniciar AR</button>
 		</div>
 
 		<div id="pontos">
@@ -98,7 +97,6 @@
 			const qrResult = document.getElementById("qr-result");
 			const infoDiv = document.getElementById("info");
 			const listaPontosSpan = document.getElementById("listaPontos");
-			const startARBtn = document.getElementById("start-ar-btn");
 
 			let videoStream = null;
 			let scanning = false;
@@ -151,15 +149,11 @@
 			function showARButton() {
 				qrOverlay.style.display = "none";
 				infoDiv.style.display = "block";
-				startARBtn.style.display = "inline-block";
 			}
 
-			startARBtn.addEventListener("click", () => {
-				startARBtn.style.display = "none";
-				initAR();
-				animate();
-			});
-
+			initAR();
+			animate();
+			
 			function initAR() {
 				const container = document.createElement("div");
 				document.body.appendChild(container);
@@ -236,7 +230,13 @@
 				if (marcadorOrigem) posRelativa.sub(marcadorOrigem);
 
 				pontosSalvos.push(posRelativa);
-				atualizarListaPontos();
+
+				// Mostrar alert com a posição salva (relativa)
+				alert(
+					`Posição salva:\nX: ${posRelativa.x.toFixed(2)}\nY: ${posRelativa.y.toFixed(
+						2
+					)}\nZ: ${posRelativa.z.toFixed(2)}`
+				);
 
 				const boxGeo = new THREE.BoxGeometry(0.12, 0.12, 0.12);
 				const boxMat = new THREE.MeshStandardMaterial({
