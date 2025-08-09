@@ -48,7 +48,7 @@
           const sphere = document.createElement("a-sphere");
           sphere.setAttribute("radius", "0.1");
           sphere.setAttribute("color", "blue");
-          sphere.object3D.position.copy(pos);
+          sphere.setAttribute("position", `${pos.x} ${pos.y} ${pos.z}`);
           pontosEl.appendChild(sphere);
 
           console.log("Ponto registrado:", pontosRegistrados);
