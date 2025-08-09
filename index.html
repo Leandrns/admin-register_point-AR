@@ -2,56 +2,80 @@
 <html>
 	<head>
 		<meta charset="utf-8" />
-		<title>Teste AR sem marcador</title>
+		<title>Registro de Ponto sem Marcador</title>
 		<script src="https://aframe.io/releases/1.7.0/aframe.min.js"></script>
+		<script src="https://cdn.jsdelivr.net/gh/AR-js-org/AR.js/aframe/build/aframe-ar-nft.js"></script>
 	</head>
 	<body style="margin: 0; overflow: hidden">
 		<button
 			id="registerBtn"
 			style="position: fixed; top: 10px; left: 10px; z-index: 2"
 		>
-			Registrar Ponto
+			Ativar AR
 		</button>
 
 		<a-scene
-			xr-mode-ui="enabled: true"
-			embedded
-			renderer="colorManagement: true; physicallyCorrectLights"
 			vr-mode-ui="enabled: false"
-			webxr="requiredFeatures: hit-test; optionalFeatures: dom-overlay; domOverlay: {root: document.body};"
+			embedded
+			renderer="colorManagement: true"
+			xrweb="requiredFeatures: hit-test"
+			webxr="optionalFeatures: hit-test"
+			id="scene"
 		>
-			<!-- Luz para iluminar os objetos -->
-			<a-light type="ambient" intensity="1"></a-light>
-			<a-light type="directional" position="0 1 0" intensity="0.5"></a-light>
-            
-			<!-- Entidade onde serão adicionados os pontos -->
+			<a-entity camera position="0 1.6 0" look-controls></a-entity>
 			<a-entity id="pontos"></a-entity>
-
-			<!-- Câmera AR -->
-			<a-entity camera look-controls></a-entity>
 		</a-scene>
 
 		<script>
+			let xrSession = null;
+			let hitTestSource = null;
 			const pontosEl = document.getElementById("pontos");
 			const pontosRegistrados = [];
 
-			document.getElementById("registerBtn").addEventListener("click", () => {
-				const camera = document.querySelector("[camera]");
-				const pos = camera.object3D.position.clone();
-				const rot = camera.object3D.rotation.clone();
+			document.getElementById("registerBtn").addEventListener("click", async () => {
+				const sceneEl = document.getElementById("scene");
 
-				// Guarda em memória
-				pontosRegistrados.push({ x: pos.x, y: pos.y, z: pos.z, rotY: rot.y });
+				// Solicita uma sessão de AR
+				xrSession = await navigator.xr.requestSession("immersive-ar", {
+					requiredFeatures: ["hit-test", "local-floor"],
+				});
 
-				// Cria esfera no local registrado
+				const xrRefSpace = await xrSession.requestReferenceSpace("local-floor");
+				const viewerSpace = await xrSession.requestReferenceSpace("viewer");
+				hitTestSource = await xrSession.requestHitTestSource({ space: viewerSpace });
+
+				xrSession.addEventListener("select", (event) => {
+					if (lastHitPos) {
+						pontosRegistrados.push(lastHitPos.clone());
+						criarEsfera(lastHitPos);
+						console.log("Ponto registrado:", pontosRegistrados);
+					}
+				});
+
+				sceneEl.renderer.xr.setSession(xrSession);
+
+				let lastHitPos = null;
+
+				xrSession.requestAnimationFrame(function onXRFrame(time, frame) {
+					const referenceSpace = xrRefSpace;
+					const hitTestResults = frame.getHitTestResults(hitTestSource);
+
+					if (hitTestResults.length > 0) {
+						const pose = hitTestResults[0].getPose(referenceSpace);
+						lastHitPos = pose.transform.position;
+					}
+
+					xrSession.requestAnimationFrame(onXRFrame);
+				});
+			});
+
+			function criarEsfera(pos) {
 				const sphere = document.createElement("a-sphere");
 				sphere.setAttribute("radius", "0.1");
 				sphere.setAttribute("color", "blue");
-				sphere.setAttribute("position", `${pos.x} ${pos.y} ${pos.z}`);
+				sphere.object3D.position.set(pos.x, pos.y, pos.z);
 				pontosEl.appendChild(sphere);
-
-				console.log("Ponto registrado:", pontosRegistrados);
-			});
+			}
 		</script>
 	</body>
 </html>
