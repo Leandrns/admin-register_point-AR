@@ -1,81 +1,58 @@
 <!DOCTYPE html>
 <html>
-	<head>
-		<meta charset="utf-8" />
-		<title>Registro de Ponto sem Marcador</title>
-		<script src="https://aframe.io/releases/1.7.0/aframe.min.js"></script>
-		<script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar-nft.js"></script>
-	</head>
-	<body style="margin: 0; overflow: hidden">
-		<button
-			id="registerBtn"
-			style="position: fixed; top: 10px; left: 10px; z-index: 2"
-		>
-			Ativar AR
-		</button>
+  <head>
+    <meta charset="utf-8">
+    <title>Registro de Ponto AR Persistente</title>
+    <script src="https://aframe.io/releases/1.7.0/aframe.min.js"></script>
+    <script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar.js"></script>
+  </head>
+  <body style="margin: 0; overflow: hidden;">
+    <button id="registerBtn" style="position: fixed; top: 10px; left: 10px; z-index: 2;">
+      Registrar Ponto
+    </button>
 
-		<a-scene
-			vr-mode-ui="enabled: false"
-			embedded
-			renderer="colorManagement: true"
-			xrweb="requiredFeatures: hit-test"
-			webxr="optionalFeatures: hit-test"
-			id="scene"
-		>
-			<a-entity camera position="0 1.6 0" look-controls></a-entity>
-			<a-entity id="pontos"></a-entity>
-		</a-scene>
+    <a-scene embedded arjs="sourceType: webcam; debugUIEnabled: false;">
+      <!-- Marcador de referência -->
+      <a-marker preset="hiro" id="marker">
+        <a-box position="0 0.5 0" material="color: red;"></a-box>
+      </a-marker>
 
-		<script>
-			let xrSession = null;
-			let hitTestSource = null;
-			const pontosEl = document.getElementById("pontos");
-			const pontosRegistrados = [];
+      <!-- Container para pontos fixos -->
+      <a-entity id="pontos"></a-entity>
 
-			document.getElementById("registerBtn").addEventListener("click", async () => {
-				const sceneEl = document.getElementById("scene");
+      <!-- Câmera -->
+      <a-entity camera></a-entity>
+    </a-scene>
 
-				// Solicita uma sessão de AR
-				xrSession = await navigator.xr.requestSession("immersive-ar", {
-					requiredFeatures: ["hit-test", "local-floor"],
-				});
+    <script>
+      const pontosEl = document.getElementById("pontos");
+      const pontosRegistrados = [];
 
-				const xrRefSpace = await xrSession.requestReferenceSpace("local-floor");
-				const viewerSpace = await xrSession.requestReferenceSpace("viewer");
-				hitTestSource = await xrSession.requestHitTestSource({ space: viewerSpace });
+      document.getElementById("registerBtn").addEventListener("click", () => {
+        const marker = document.getElementById("marker");
 
-				xrSession.addEventListener("select", (event) => {
-					if (lastHitPos) {
-						pontosRegistrados.push(lastHitPos.clone());
-						criarEsfera(lastHitPos);
-						console.log("Ponto registrado:", pontosRegistrados);
-					}
-				});
+        if (marker.object3D.visible) {
+          // Pega a posição e rotação do marcador no mundo
+          const pos = new THREE.Vector3();
+          const rot = new THREE.Euler();
+          marker.object3D.getWorldPosition(pos);
+          marker.object3D.getWorldRotation(rot);
 
-				sceneEl.renderer.xr.setSession(xrSession);
+          // Salva em memória
+          pontosRegistrados.push({ x: pos.x, y: pos.y, z: pos.z, rotY: rot.y });
 
-				let lastHitPos = null;
+          // Cria esfera no espaço global
+          const sphere = document.createElement("a-sphere");
+          sphere.setAttribute("radius", "0.1");
+          sphere.setAttribute("color", "blue");
+          sphere.object3D.position.copy(pos);
+          pontosEl.appendChild(sphere);
 
-				xrSession.requestAnimationFrame(function onXRFrame(time, frame) {
-					const referenceSpace = xrRefSpace;
-					const hitTestResults = frame.getHitTestResults(hitTestSource);
-
-					if (hitTestResults.length > 0) {
-						const pose = hitTestResults[0].getPose(referenceSpace);
-						lastHitPos = pose.transform.position;
-					}
-
-					xrSession.requestAnimationFrame(onXRFrame);
-				});
-			});
-
-			function criarEsfera(pos) {
-				const sphere = document.createElement("a-sphere");
-				sphere.setAttribute("radius", "0.1");
-				sphere.setAttribute("color", "blue");
-				sphere.object3D.position.set(pos.x, pos.y, pos.z);
-				pontosEl.appendChild(sphere);
-			}
-		</script>
-	</body>
+          console.log("Ponto registrado:", pontosRegistrados);
+        } else {
+          alert("Aponte a câmera para o marcador Hiro para registrar.");
+        }
+      });
+    </script>
+  </body>
 </html>
