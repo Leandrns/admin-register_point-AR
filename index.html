@@ -6,7 +6,7 @@
 			name="viewport"
 			content="width=device-width,initial-scale=1,minimum-scale=1,viewport-fit=cover"
 		/>
-		<title>WebXR AR Hit Test + QR Marker</title>
+		<title>WebXR AR Hit Test + QR Marker com fluxo separado</title>
         <script src="https://unpkg.com/jsqr/dist/jsQR.js"></script>
 		<style>
 			html,
@@ -21,33 +21,62 @@
 				position: fixed;
 				left: 10px;
 				top: 10px;
-				z-index: 2;
+				z-index: 3;
 				background: rgba(0, 0, 0, 0.5);
 				padding: 10px;
 				border-radius: 8px;
+				max-width: 320px;
 			}
 			#pontos {
 				position: fixed;
 				bottom: 10px;
 				left: 10px;
-				z-index: 2;
+				z-index: 3;
 				background: rgba(0, 0, 0, 0.5);
 				padding: 10px;
 				border-radius: 8px;
 				font-size: 12px;
-				max-width: 300px;
+				max-width: 320px;
+				white-space: pre-wrap;
 			}
-			canvas {
-				display: block;
+			#qr-overlay {
+				position: fixed;
+				top: 0;
+				left: 0;
+				width: 100vw;
+				height: 100vh;
+				background: rgba(0, 0, 0, 0.85);
+				display: flex;
+				flex-direction: column;
+				align-items: center;
+				justify-content: center;
+				color: white;
+				font-size: 18px;
+				z-index: 10;
+			}
+			video {
+				width: 320px;
+				height: 240px;
+				border: 2px solid #0f0;
+				border-radius: 10px;
 			}
 		</style>
 	</head>
 	<body>
-		<div id="info">
-			<strong>WebXR AR Hit Test + QR Marker</strong><br />
-			Escaneie o QR Code para calibrar a origem.<br />
-			Toque no retículo para colocar um cubo.
+		<div id="qr-overlay">
+			<div>Aponte a câmera para o QR Code para calibrar a origem.</div>
+			<video id="qr-video" playsinline></video>
+			<div style="margin-top: 10px; font-size: 14px; color: #0f0" id="qr-result">
+				Aguardando QR code...
+			</div>
 		</div>
+
+		<div id="info" style="display: none">
+			<strong>WebXR AR Hit Test + QR Marker</strong><br />
+			Toque no retículo para colocar um cubo.<br />
+			<button id="start-ar-btn" style="margin-top: 8px">Iniciar AR</button>
+		</div>
+
 		<div id="pontos">
 			<strong>Pontos salvos:</strong><br /><span id="listaPontos"></span>
 		</div>
@@ -61,17 +90,77 @@
 			let hitTestSource = null;
 			let localReferenceSpace = null;
 
-			let marcadorOrigem = null; // Posição do marcador QR
+			let marcadorOrigem = null; // posição THREE.Vector3 do marcador QR
 			let pontosSalvos = [];
 
-			// Para captura do vídeo da câmera
-			let videoCanvas = document.createElement("canvas");
-			let videoCtx = videoCanvas.getContext("2d");
+			const qrOverlay = document.getElementById("qr-overlay");
+			const qrVideo = document.getElementById("qr-video");
+			const qrResult = document.getElementById("qr-result");
+			const infoDiv = document.getElementById("info");
+			const listaPontosSpan = document.getElementById("listaPontos");
+			const startARBtn = document.getElementById("start-ar-btn");
 
-			init();
-			animate();
+			let videoStream = null;
+			let scanning = false;
 
-			function init() {
+			async function startQrScanner() {
+				try {
+					videoStream = await navigator.mediaDevices.getUserMedia({
+						video: { facingMode: "environment" },
+					});
+					qrVideo.srcObject = videoStream;
+					await qrVideo.play();
+					scanning = true;
+					scanLoop();
+				} catch (e) {
+					qrResult.textContent = "Erro ao acessar a câmera: " + e.message;
+				}
+			}
+
+			function stopQrScanner() {
+				if (videoStream) {
+					videoStream.getTracks().forEach((track) => track.stop());
+					videoStream = null;
+				}
+				scanning = false;
+			}
+
+			function scanLoop() {
+				if (!scanning) return;
+				if (qrVideo.readyState === qrVideo.HAVE_ENOUGH_DATA) {
+					const canvas = document.createElement("canvas");
+					const ctx = canvas.getContext("2d");
+					canvas.width = qrVideo.videoWidth;
+					canvas.height = qrVideo.videoHeight;
+					ctx.drawImage(qrVideo, 0, 0, canvas.width, canvas.height);
+					const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+					const code = jsQR(imageData.data, canvas.width, canvas.height);
+					if (code) {
+						qrResult.textContent = "QR Code detectado: " + code.data;
+						marcadorOrigem = new THREE.Vector3(0, 0, 0); // No seu fluxo atual, não temos pose real do QR, só indicamos origem no (0,0,0)
+						stopQrScanner();
+						showARButton();
+						return;
+					} else {
+						qrResult.textContent = "Aguardando QR code...";
+					}
+				}
+				requestAnimationFrame(scanLoop);
+			}
+
+			function showARButton() {
+				qrOverlay.style.display = "none";
+				infoDiv.style.display = "block";
+				startARBtn.style.display = "inline-block";
+			}
+
+			startARBtn.addEventListener("click", () => {
+				startARBtn.style.display = "none";
+				initAR();
+				animate();
+			});
+
+			function initAR() {
 				const container = document.createElement("div");
 				document.body.appendChild(container);
 
@@ -126,17 +215,15 @@
 				session.requestReferenceSpace("local").then((refSpace) => {
 					localReferenceSpace = refSpace;
 				});
-
-				// Captura o vídeo da câmera para detectar QR
-				const track = session.requestAnimationFrame;
-				const cam = session.renderState.baseLayer;
 			}
 
 			function onSessionEnd() {
 				hitTestSource = null;
 				localReferenceSpace = null;
 				reticle.visible = false;
+				pontosSalvos = [];
 				marcadorOrigem = null;
+				listaPontosSpan.textContent = "";
 			}
 
 			function onSelect() {
@@ -162,15 +249,19 @@
 			}
 
 			function atualizarListaPontos() {
-				document.getElementById("listaPontos").innerText = pontosSalvos
+				listaPontosSpan.textContent = pontosSalvos
 					.map((p) => `(${p.x.toFixed(2)}, ${p.y.toFixed(2)}, ${p.z.toFixed(2)})`)
 					.join("\n");
 			}
 
 			function onWindowResize() {
-				camera.aspect = window.innerWidth / window.innerHeight;
-				camera.updateProjectionMatrix();
-				renderer.setSize(window.innerWidth, window.innerHeight);
+				if (camera) {
+					camera.aspect = window.innerWidth / window.innerHeight;
+					camera.updateProjectionMatrix();
+				}
+				if (renderer) {
+					renderer.setSize(window.innerWidth, window.innerHeight);
+				}
 			}
 
 			function animate() {
@@ -188,9 +279,6 @@
 							const pose = hit.getPose(referenceSpace);
 							reticle.visible = true;
 							reticle.matrix.fromArray(pose.transform.matrix);
-
-							// Tentativa de detecção de QR
-							detectarQR(frame);
 						} else {
 							reticle.visible = false;
 						}
@@ -199,25 +287,8 @@
 				renderer.render(scene, camera);
 			}
 
-			function detectarQR(frame) {
-				const baseLayer = renderer.xr.getBaseLayer();
-				const glBinding = renderer.getContext();
-				const viewport = baseLayer.getViewport(camera);
-
-				videoCanvas.width = viewport.width;
-				videoCanvas.height = viewport.height;
-
-				videoCtx.drawImage(renderer.domElement, 0, 0, viewport.width, viewport.height);
-				const imageData = videoCtx.getImageData(0, 0, viewport.width, viewport.height);
-				const code = jsQR(imageData.data, imageData.width, imageData.height);
-
-				if (code) {
-					if (!marcadorOrigem && reticle.visible) {
-						marcadorOrigem = new THREE.Vector3().setFromMatrixPosition(reticle.matrix);
-						console.log("Marcador QR detectado! Origem calibrada em:", marcadorOrigem);
-					}
-				}
-			}
+			// Começa lendo o QR ao abrir
+			startQrScanner();
 		</script>
 	</body>
 </html>
