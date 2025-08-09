@@ -7,6 +7,7 @@
 			content="width=device-width,initial-scale=1,minimum-scale=1,viewport-fit=cover"
 		/>
 		<title>WebXR AR Hit Test + QR Marker</title>
+        <script src="https://unpkg.com/jsqr/dist/jsQR.js"></script>
 		<style>
 			html,
 			body {
@@ -54,7 +55,6 @@
 		<script type="module">
 			import * as THREE from "https://unpkg.com/three@0.148.0/build/three.module.js";
 			import { ARButton } from "https://unpkg.com/three@0.148.0/examples/jsm/webxr/ARButton.js";
-			import jsQR from "https://unpkg.com/jsqr/dist/jsQR.js";
 
 			let camera, scene, renderer;
 			let controller, reticle;
