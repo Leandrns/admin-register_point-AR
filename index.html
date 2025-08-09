@@ -2,109 +2,70 @@
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8" />
-  <title>AR Hit Test Simples</title>
+  <title>Registro de Pontos AR com WebXR Hit Test</title>
   <script src="https://aframe.io/releases/1.7.0/aframe.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/gh/c-frame/aframe-extras@7.6.0/dist/aframe-extras.min.js"></script>
 </head>
-<body style="margin: 0; overflow: hidden;">
+<body style="margin:0; overflow:hidden;">
   <a-scene
     vr-mode-ui="enabled: false"
     embedded
-    arjs="sourceType: webcam; debugUIEnabled: false;"
-    renderer="logarithmicDepthBuffer: true; colorManagement: true;"
-    xrweb="optionalFeatures: hit-test"
+    webxr="optionalFeatures: hit-test"
+    ar-hit-test
   >
-    <!-- Luz para o objeto -->
-    <a-light type="ambient" color="#ffffff" intensity="0.8"></a-light>
-    <a-light type="directional" position="0 1 1" intensity="0.6"></a-light>
+    <!-- Retículo para mostrar onde o hit test detecta superfície -->
+    <a-entity id="reticle" 
+              geometry="primitive: ring; radiusInner: 0.05; radiusOuter: 0.06" 
+              material="color: yellow; shader: flat"
+              visible="false">
+    </a-entity>
 
-    <!-- Reticle para indicar superfície detectada -->
-    <a-entity id="reticle" visible="false" geometry="primitive: ring; radiusInner: 0.05; radiusOuter: 0.06" material="color: lime; shader: flat" rotation="-90 0 0"></a-entity>
+    <!-- Container dos pontos criados -->
+    <a-entity id="pontos"></a-entity>
 
-    <!-- Espaço para colocar a esfera -->
-    <a-entity id="placed-object"></a-entity>
-
-    <a-camera id="camera" camera position="0 1.6 0" look-controls></a-camera>
+    <a-camera position="0 1.6 0"></a-camera>
   </a-scene>
 
   <script>
     const scene = document.querySelector('a-scene');
-    const camera = document.querySelector('#camera');
-    const reticle = document.querySelector('#reticle');
-    const placedObject = document.querySelector('#placed-object');
+    const reticle = document.getElementById('reticle');
+    const pontosEl = document.getElementById('pontos');
 
-    let xrSession = null;
-    let xrReferenceSpace = null;
-    let viewerReferenceSpace = null;
-    let hitTestSource = null;
-
-    scene.addEventListener('enter-vr', async () => {
-      if (navigator.xr) {
-        xrSession = scene.xrSession;
-
-        if (!xrSession) return;
-
-        // Referência espacial para o mundo
-        xrReferenceSpace = await xrSession.requestReferenceSpace('local');
-
-        // Espaço do visualizador para hit test
-        viewerReferenceSpace = await xrSession.requestReferenceSpace('viewer');
-
-        // Pede a fonte de hit test
-        hitTestSource = await xrSession.requestHitTestSource({ space: viewerReferenceSpace });
-
-        // Mostra o reticle
-        reticle.setAttribute('visible', false);
-
-        // Loop para atualizar a posição do reticle
-        xrSession.requestAnimationFrame(onXRFrame);
-      }
+    // Quando o sistema de hit-test está ativo, o reticle fica visível
+    scene.addEventListener('ar-hit-test-start', () => {
+      reticle.setAttribute('visible', true);
     });
 
-    // Função que atualiza frame XR
-    function onXRFrame(time, frame) {
-      let session = frame.session;
-      session.requestAnimationFrame(onXRFrame);
+    // Atualiza posição e rotação do reticle conforme a superfície detectada
+    scene.addEventListener('ar-hit-test-update', (event) => {
+      const { position, rotation } = event.detail;
+      reticle.object3D.position.copy(position);
+      reticle.object3D.rotation.copy(rotation);
+      reticle.setAttribute('visible', true);
+    });
 
-      const hitTestResults = frame.getHitTestResults(hitTestSource);
+    // Reticle some quando não há superfície detectada
+    scene.addEventListener('ar-hit-test-end', () => {
+      reticle.setAttribute('visible', false);
+    });
 
-      if (hitTestResults.length > 0) {
-        const hit = hitTestResults[0];
-        const pose = hit.getPose(xrReferenceSpace);
-
-        // Posiciona o reticle onde o hit test detectou a superfície
-        reticle.object3D.position.set(pose.transform.position.x, pose.transform.position.y, pose.transform.position.z);
-        reticle.object3D.quaternion.set(pose.transform.orientation.x, pose.transform.orientation.y, pose.transform.orientation.z, pose.transform.orientation.w);
-        reticle.setAttribute('visible', true);
-      } else {
-        reticle.setAttribute('visible', false);
+    // Ao tocar na tela, registra um ponto na posição atual do reticle
+    scene.addEventListener('click', () => {
+      if (!reticle.getAttribute('visible')) {
+        alert('Aponte para uma superfície para registrar o ponto.');
+        return;
       }
-    }
 
-    // Evento para colocar o objeto quando tocar na tela
-    window.addEventListener('click', () => {
-      if (reticle.getAttribute('visible')) {
-        const pos = reticle.object3D.position;
-        const quat = reticle.object3D.quaternion;
+      const pos = reticle.object3D.position.clone();
 
-        placedObject.setAttribute('position', pos);
-        placedObject.setAttribute('rotation', {
-          x: 0,
-          y: THREE.Euler().setFromQuaternion(quat).y * (180 / Math.PI),
-          z: 0
-        });
+      const sphere = document.createElement('a-sphere');
+      sphere.setAttribute('radius', '0.1');
+      sphere.setAttribute('color', 'blue');
+      sphere.object3D.position.copy(pos);
 
-        // Adiciona uma esfera se ainda não tiver
-        if (!placedObject.querySelector('a-sphere')) {
-          const sphere = document.createElement('a-sphere');
-          sphere.setAttribute('radius', '0.1');
-          sphere.setAttribute('color', '#FF0000');
-          placedObject.appendChild(sphere);
-        }
-      }
+      pontosEl.appendChild(sphere);
+
+      console.log('Ponto registrado em:', pos);
     });
   </script>
-
-  <script src="https://cdn.jsdelivr.net/npm/three@0.149.0/build/three.min.js"></script>
 </body>
 </html>
