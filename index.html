@@ -6,8 +6,7 @@
 			name="viewport"
 			content="width=device-width,initial-scale=1,minimum-scale=1,viewport-fit=cover"
 		/>
-		<title>WebXR AR Hit Test + QR Marker com fluxo separado</title>
-		<script src="https://unpkg.com/jsqr/dist/jsQR.js"></script>
+		<title>WebXR AR Hit Test + js-aruco Marker Detection</title>
 		<style>
 			html,
 			body {
@@ -39,7 +38,7 @@
 				max-width: 320px;
 				white-space: pre-wrap;
 			}
-			#qr-overlay {
+			#aruco-overlay {
 				position: fixed;
 				top: 0;
 				left: 0;
@@ -63,16 +62,20 @@
 		</style>
 	</head>
 	<body>
-		<div id="qr-overlay">
-			<div>Aponte a câmera para o QR Code para calibrar a origem.</div>
-			<video id="qr-video" playsinline></video>
-			<div style="margin-top: 10px; font-size: 14px; color: #0f0" id="qr-result">
-				Aguardando QR code...
+		<div id="aruco-overlay">
+			<div>Aponte a câmera para o marcador ArUco para calibrar a origem.</div>
+			<video id="aruco-video" playsinline></video>
+			<canvas id="aruco-canvas" style="display: none"></canvas>
+			<div style="margin-top: 10px; font-size: 14px; color: #0f0" id="aruco-result">
+				Aguardando marcador...
 			</div>
+			<button id="start-ar-btn" style="margin-top: 10px; display: none">
+				Iniciar AR
+			</button>
 		</div>
 
 		<div id="info" style="display: none">
-			<strong>WebXR AR Hit Test + QR Marker</strong><br />
+			<strong>WebXR AR Hit Test + ArUco Marker</strong><br />
 			Toque no retículo para colocar um cubo.<br />
 		</div>
 
@@ -84,38 +87,57 @@
 			import * as THREE from "https://unpkg.com/three@0.148.0/build/three.module.js";
 			import { ARButton } from "https://unpkg.com/three@0.148.0/examples/jsm/webxr/ARButton.js";
 
+			// Import js-aruco (via CDN UMD) - usamos script tag abaixo para carregar global Aruco
+			// Mas aqui a gente vai fazer um truque pra importar (vai ter um <script> abaixo)
+
 			let camera, scene, renderer;
 			let controller, reticle;
 			let hitTestSource = null;
 			let localReferenceSpace = null;
 
-			let marcadorOrigem = null; // posição THREE.Vector3 do marcador QR
+			let marcadorOrigem = null; // THREE.Matrix4 da pose do marcador detectado
 			let pontosSalvos = [];
 
-			const qrOverlay = document.getElementById("qr-overlay");
-			const qrVideo = document.getElementById("qr-video");
-			const qrResult = document.getElementById("qr-result");
+			const arucoOverlay = document.getElementById("aruco-overlay");
+			const arucoVideo = document.getElementById("aruco-video");
+			const arucoCanvas = document.getElementById("aruco-canvas");
+			const arucoCtx = arucoCanvas.getContext("2d");
+			const arucoResult = document.getElementById("aruco-result");
+			const startARBtn = document.getElementById("start-ar-btn");
 			const infoDiv = document.getElementById("info");
 			const listaPontosSpan = document.getElementById("listaPontos");
 
 			let videoStream = null;
 			let scanning = false;
 
-			async function startQrScanner() {
+			// Parâmetros para detecção ArUco
+			const markerSize = 0.1; // tamanho real do marcador em metros (ajuste conforme seu marcador físico)
+
+			let detector, posit;
+
+			async function startArucoScanner() {
 				try {
 					videoStream = await navigator.mediaDevices.getUserMedia({
 						video: { facingMode: "environment" },
 					});
-					qrVideo.srcObject = videoStream;
-					await qrVideo.play();
+					arucoVideo.srcObject = videoStream;
+					await arucoVideo.play();
 					scanning = true;
+
+					// Ajusta canvas para o tamanho do vídeo
+					arucoCanvas.width = arucoVideo.videoWidth;
+					arucoCanvas.height = arucoVideo.videoHeight;
+
+					detector = new AR.Detector();
+					posit = new POS.Posit(markerSize, arucoCanvas.width);
+
 					scanLoop();
 				} catch (e) {
-					qrResult.textContent = "Erro ao acessar a câmera: " + e.message;
+					arucoResult.textContent = "Erro ao acessar a câmera: " + e.message;
 				}
 			}
 
-			function stopQrScanner() {
+			function stopArucoScanner() {
 				if (videoStream) {
 					videoStream.getTracks().forEach((track) => track.stop());
 					videoStream = null;
@@ -125,35 +147,88 @@
 
 			function scanLoop() {
 				if (!scanning) return;
-				if (qrVideo.readyState === qrVideo.HAVE_ENOUGH_DATA) {
-					const canvas = document.createElement("canvas");
-					const ctx = canvas.getContext("2d");
-					canvas.width = qrVideo.videoWidth;
-					canvas.height = qrVideo.videoHeight;
-					ctx.drawImage(qrVideo, 0, 0, canvas.width, canvas.height);
-					const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-					const code = jsQR(imageData.data, canvas.width, canvas.height);
-					if (code) {
-						qrResult.textContent = "QR Code detectado: " + code.data;
-						marcadorOrigem = new THREE.Vector3(0, 0, 0); // No seu fluxo atual, não temos pose real do QR, só indicamos origem no (0,0,0)
-						stopQrScanner();
-						showARButton();
+				if (arucoVideo.readyState === arucoVideo.HAVE_ENOUGH_DATA) {
+					arucoCtx.drawImage(arucoVideo, 0, 0, arucoCanvas.width, arucoCanvas.height);
+					let imageData = arucoCtx.getImageData(
+						0,
+						0,
+						arucoCanvas.width,
+						arucoCanvas.height
+					);
+					let markers = detector.detect(imageData);
+
+					if (markers.length > 0) {
+						arucoResult.textContent = "Marcador detectado! ID: " + markers[0].id;
+
+						// Estimar pose
+						let corners = markers[0].corners;
+
+						// Corrigir coordenadas pois js-aruco usa origem diferente (embaixo à esquerda)
+						for (let i = 0; i < corners.length; i++) {
+							let corner = corners[i];
+							corner.x -= arucoCanvas.width / 2;
+							corner.y = arucoCanvas.height / 2 - corner.y;
+						}
+
+						let pose = posit.pose(corners);
+
+						// Montar matriz 4x4 do pose para three.js
+						marcadorOrigem = poseToMatrix(pose);
+
+						stopArucoScanner();
+
+						arucoOverlay.style.display = "none";
+						infoDiv.style.display = "block";
+						startARBtn.style.display = "inline-block";
+
 						return;
 					} else {
-						qrResult.textContent = "Aguardando QR code...";
+						arucoResult.textContent = "Aguardando marcador...";
 					}
 				}
 				requestAnimationFrame(scanLoop);
 			}
 
-			function showARButton() {
-				qrOverlay.style.display = "none";
-				infoDiv.style.display = "block";
+			function poseToMatrix(pose) {
+				// pose.bestRotation é array 3x3 (row major)
+				// pose.bestTranslation é array 3
+
+				const rot = pose.bestRotation;
+				const trans = pose.bestTranslation;
+
+				const mat = new THREE.Matrix4();
+
+				// construir matriz 4x4 manualmente
+				mat.set(
+					rot[0][0],
+					rot[0][1],
+					rot[0][2],
+					trans[0],
+					rot[1][0],
+					rot[1][1],
+					rot[1][2],
+					trans[1],
+					rot[2][0],
+					rot[2][1],
+					rot[2][2],
+					trans[2],
+					0,
+					0,
+					0,
+					1
+				);
+
+				// Ajuste do sistema de coordenadas (invertendo Y e Z) pode ser necessário conforme calibração
+
+				return mat;
 			}
 
-			initAR();
-			animate();
-			
+			startARBtn.addEventListener("click", () => {
+				startARBtn.style.display = "none";
+				initAR();
+				animate();
+			});
+
 			function initAR() {
 				const container = document.createElement("div");
 				document.body.appendChild(container);
@@ -225,13 +300,16 @@
 
 				const pos = new THREE.Vector3().setFromMatrixPosition(reticle.matrix);
 
-				// Se temos marcador, salvar posição relativa a ele
+				// Salvar posição relativa ao marcadorOrigem (transformando posição global para local)
 				let posRelativa = pos.clone();
-				if (marcadorOrigem) posRelativa.sub(marcadorOrigem);
+
+				if (marcadorOrigem) {
+					// matriz inversa do marcador para transformar global -> local
+					const inversa = new THREE.Matrix4().copy(marcadorOrigem).invert();
+					posRelativa.applyMatrix4(inversa);
+				}
 
 				pontosSalvos.push(posRelativa);
-
-				// Mostrar alert com a posição salva (relativa)
 				alert(
 					`Posição salva:\nX: ${posRelativa.x.toFixed(2)}\nY: ${posRelativa.y.toFixed(
 						2
@@ -246,12 +324,6 @@
 				const box = new THREE.Mesh(boxGeo, boxMat);
 				box.position.copy(pos);
 				scene.add(box);
-			}
-
-			function atualizarListaPontos() {
-				listaPontosSpan.textContent = pontosSalvos
-					.map((p) => `(${p.x.toFixed(2)}, ${p.y.toFixed(2)}, ${p.z.toFixed(2)})`)
-					.join("\n");
 			}
 
 			function onWindowResize() {
@@ -287,8 +359,12 @@
 				renderer.render(scene, camera);
 			}
 
-			// Começa lendo o QR ao abrir
-			startQrScanner();
+			// Inicia o scanner ArUco no carregamento
+			startArucoScanner();
 		</script>
+
+		<!-- Import js-aruco e posit.js via CDN -->
+		<script src="https://cdn.jsdelivr.net/gh/jcmellado/js-aruco@master/build/aruco.js"></script>
+		<script src="https://cdn.jsdelivr.net/gh/jcmellado/js-aruco@master/build/posit1.js"></script>
 	</body>
 </html>
