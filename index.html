@@ -6,15 +6,15 @@
 			name="viewport"
 			content="width=device-width,initial-scale=1,minimum-scale=1,viewport-fit=cover"
 		/>
-		<title>WebXR AR Hit Test — Cubo</title>
+		<title>WebXR AR Hit Test + QR Marker</title>
 		<style>
 			html,
 			body {
 				height: 100%;
 				margin: 0;
-				font-family: Arial, Helvetica, sans-serif;
 				background: #111;
 				color: #ddd;
+				font-family: Arial;
 			}
 			#info {
 				position: fixed;
@@ -25,6 +25,17 @@
 				padding: 10px;
 				border-radius: 8px;
 			}
+			#pontos {
+				position: fixed;
+				bottom: 10px;
+				left: 10px;
+				z-index: 2;
+				background: rgba(0, 0, 0, 0.5);
+				padding: 10px;
+				border-radius: 8px;
+				font-size: 12px;
+				max-width: 300px;
+			}
 			canvas {
 				display: block;
 			}
@@ -32,21 +43,30 @@
 	</head>
 	<body>
 		<div id="info">
-			<strong>WebXR AR Hit Test</strong><br />
-			Toque no retículo para colocar um cubo. Use um dispositivo compatível (Android +
-			Chrome) e sirva via HTTPS / localhost.
+			<strong>WebXR AR Hit Test + QR Marker</strong><br />
+			Escaneie o QR Code para calibrar a origem.<br />
+			Toque no retículo para colocar um cubo.
+		</div>
+		<div id="pontos">
+			<strong>Pontos salvos:</strong><br /><span id="listaPontos"></span>
 		</div>
 
 		<script type="module">
 			import * as THREE from "https://unpkg.com/three@0.148.0/build/three.module.js";
 			import { ARButton } from "https://unpkg.com/three@0.148.0/examples/jsm/webxr/ARButton.js";
+			import jsQR from "https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js";
 
 			let camera, scene, renderer;
-			let controller;
-			let reticle;
-
+			let controller, reticle;
 			let hitTestSource = null;
 			let localReferenceSpace = null;
+
+			let marcadorOrigem = null; // Posição do marcador QR
+			let pontosSalvos = [];
+
+			// Para captura do vídeo da câmera
+			let videoCanvas = document.createElement("canvas");
+			let videoCtx = videoCanvas.getContext("2d");
 
 			init();
 			animate();
@@ -56,7 +76,6 @@
 				document.body.appendChild(container);
 
 				scene = new THREE.Scene();
-
 				camera = new THREE.PerspectiveCamera(
 					70,
 					window.innerWidth / window.innerHeight,
@@ -64,12 +83,10 @@
 					20
 				);
 
-				// luz
 				const light = new THREE.HemisphereLight(0xffffff, 0xbbbbff, 1);
 				light.position.set(0.5, 1, 0.25);
 				scene.add(light);
 
-				// renderer
 				renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
 				renderer.setPixelRatio(window.devicePixelRatio);
 				renderer.setSize(window.innerWidth, window.innerHeight);
@@ -80,7 +97,6 @@
 					ARButton.createButton(renderer, { requiredFeatures: ["hit-test"] })
 				);
 
-				// Reticle (pequeno anel que marca o ponto de hit)
 				const geometry = new THREE.RingGeometry(0.06, 0.08, 32).rotateX(-Math.PI / 2);
 				const material = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
 				reticle = new THREE.Mesh(geometry, material);
@@ -88,14 +104,12 @@
 				reticle.visible = false;
 				scene.add(reticle);
 
-				// Controller para escutar 'select' (toque)
 				controller = renderer.xr.getController(0);
 				controller.addEventListener("select", onSelect);
 				scene.add(controller);
 
 				window.addEventListener("resize", onWindowResize);
 
-				// Gerenciar start/end da sessão para requisitar o hit test
 				renderer.xr.addEventListener("sessionstart", onSessionStart);
 				renderer.xr.addEventListener("sessionend", onSessionEnd);
 			}
@@ -103,47 +117,54 @@
 			function onSessionStart() {
 				const session = renderer.xr.getSession();
 
-				// pedir reference spaces
-				session.requestReferenceSpace("viewer").then(function (viewerReferenceSpace) {
-					session
-						.requestHitTestSource({ space: viewerReferenceSpace })
-						.then(function (source) {
-							hitTestSource = source;
-						});
+				session.requestReferenceSpace("viewer").then((viewerRefSpace) => {
+					session.requestHitTestSource({ space: viewerRefSpace }).then((source) => {
+						hitTestSource = source;
+					});
 				});
 
-				// local para posicionamento das poses obtidas por getPose
-				session.requestReferenceSpace("local").then(function (refSpace) {
+				session.requestReferenceSpace("local").then((refSpace) => {
 					localReferenceSpace = refSpace;
 				});
+
+				// Captura o vídeo da câmera para detectar QR
+				const track = session.requestAnimationFrame;
+				const cam = session.renderState.baseLayer;
 			}
 
 			function onSessionEnd() {
 				hitTestSource = null;
 				localReferenceSpace = null;
 				reticle.visible = false;
+				marcadorOrigem = null;
 			}
 
 			function onSelect() {
 				if (!reticle.visible) return;
 
-				// Criar um cubo e posicionar de acordo com o reticle
+				const pos = new THREE.Vector3().setFromMatrixPosition(reticle.matrix);
+
+				// Se temos marcador, salvar posição relativa a ele
+				let posRelativa = pos.clone();
+				if (marcadorOrigem) posRelativa.sub(marcadorOrigem);
+
+				pontosSalvos.push(posRelativa);
+				atualizarListaPontos();
+
 				const boxGeo = new THREE.BoxGeometry(0.12, 0.12, 0.12);
 				const boxMat = new THREE.MeshStandardMaterial({
 					roughness: 0.7,
 					metalness: 0.0,
 				});
 				const box = new THREE.Mesh(boxGeo, boxMat);
-
-				// usar a matrix do reticle (que está em localReferenceSpace) para posicionar o cubo
-				box.position.setFromMatrixPosition(reticle.matrix);
-
-				// girar o cubo para ficar alinhado com o chão
-				const rotation = new THREE.Euler();
-				rotation.setFromRotationMatrix(reticle.matrix);
-				box.rotation.x = 0; // opcional: alinhar ao chão
-
+				box.position.copy(pos);
 				scene.add(box);
+			}
+
+			function atualizarListaPontos() {
+				document.getElementById("listaPontos").innerText = pontosSalvos
+					.map((p) => `(${p.x.toFixed(2)}, ${p.y.toFixed(2)}, ${p.z.toFixed(2)})`)
+					.join("\n");
 			}
 
 			function onWindowResize() {
@@ -152,7 +173,6 @@
 				renderer.setSize(window.innerWidth, window.innerHeight);
 			}
 
-			// loop de render
 			function animate() {
 				renderer.setAnimationLoop(render);
 			}
@@ -163,21 +183,40 @@
 
 					if (hitTestSource && referenceSpace) {
 						const hitTestResults = frame.getHitTestResults(hitTestSource);
-
 						if (hitTestResults.length > 0) {
 							const hit = hitTestResults[0];
 							const pose = hit.getPose(referenceSpace);
-
-							// colocar reticle na pose retornada
 							reticle.visible = true;
 							reticle.matrix.fromArray(pose.transform.matrix);
+
+							// Tentativa de detecção de QR
+							detectarQR(frame);
 						} else {
 							reticle.visible = false;
 						}
 					}
 				}
-
 				renderer.render(scene, camera);
+			}
+
+			function detectarQR(frame) {
+				const baseLayer = renderer.xr.getBaseLayer();
+				const glBinding = renderer.getContext();
+				const viewport = baseLayer.getViewport(camera);
+
+				videoCanvas.width = viewport.width;
+				videoCanvas.height = viewport.height;
+
+				videoCtx.drawImage(renderer.domElement, 0, 0, viewport.width, viewport.height);
+				const imageData = videoCtx.getImageData(0, 0, viewport.width, viewport.height);
+				const code = jsQR(imageData.data, imageData.width, imageData.height);
+
+				if (code) {
+					if (!marcadorOrigem && reticle.visible) {
+						marcadorOrigem = new THREE.Vector3().setFromMatrixPosition(reticle.matrix);
+						console.log("Marcador QR detectado! Origem calibrada em:", marcadorOrigem);
+					}
+				}
 			}
 		</script>
 	</body>
