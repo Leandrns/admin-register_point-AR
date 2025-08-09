@@ -2,14 +2,11 @@
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8" />
-  <title>Registro de Pontos AR com Hit Test</title>
+  <title>Exemplo AR Hit Test</title>
   <script src="https://aframe.io/releases/1.7.0/aframe.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/gh/c-frame/aframe-extras@7.6.0/dist/aframe-extras.min.js"></script>
 </head>
 <body style="margin: 0; overflow: hidden;">
-  <button id="registerBtn" style="position: fixed; top: 10px; left: 10px; z-index: 10;">
-    Registrar Ponto
-  </button>
+  <button id="startAR" style="position: fixed; top: 10px; left: 10px; z-index: 10;">Iniciar AR</button>
 
   <a-scene
     vr-mode-ui="enabled: false"
@@ -17,8 +14,7 @@
     webxr="optionalFeatures: hit-test"
     ar-hit-test
   >
-    <a-entity id="reticle" 
-              geometry="primitive: ring; radiusInner: 0.05; radiusOuter: 0.06" 
+    <a-entity id="reticle" geometry="primitive: ring; radiusInner: 0.05; radiusOuter: 0.06"
               material="color: yellow; shader: flat"
               visible="false">
     </a-entity>
@@ -29,34 +25,42 @@
   </a-scene>
 
   <script>
-    const registerBtn = document.getElementById("registerBtn");
-    const reticle = document.getElementById("reticle");
-    const pontosEl = document.getElementById("pontos");
+    const startBtn = document.getElementById('startAR');
+    const scene = document.querySelector('a-scene');
+    const reticle = document.getElementById('reticle');
+    const pontosEl = document.getElementById('pontos');
 
-    // Aguarda que o componente ar-hit-test inicialize o reticle
-    document.querySelector('a-scene').addEventListener('ar-hit-test-start', () => {
+    startBtn.addEventListener('click', async () => {
+      if (!scene.is('ar-mode')) {
+        try {
+          await scene.enterVR();
+          startBtn.style.display = 'none'; // Esconde botão após iniciar
+        } catch (e) {
+          alert('Erro ao iniciar AR: ' + e.message);
+        }
+      }
+    });
+
+    scene.addEventListener('ar-hit-test-start', () => {
       reticle.setAttribute('visible', true);
     });
 
-    // Atualiza posição do reticle conforme o hit-test detecta superfícies
-    document.querySelector('a-scene').addEventListener('ar-hit-test-update', (event) => {
+    scene.addEventListener('ar-hit-test-update', (event) => {
       const { position, rotation } = event.detail;
       reticle.object3D.position.copy(position);
       reticle.object3D.rotation.copy(rotation);
       reticle.setAttribute('visible', true);
     });
 
-    // Esconde reticle se não há superfície detectada
-    document.querySelector('a-scene').addEventListener('ar-hit-test-end', () => {
+    scene.addEventListener('ar-hit-test-end', () => {
       reticle.setAttribute('visible', false);
     });
 
-    registerBtn.addEventListener('click', () => {
+    startBtn.addEventListener('click', () => {
       if (!reticle.getAttribute('visible')) {
         alert('Aponte para uma superfície para registrar o ponto.');
         return;
       }
-      // Cria esfera no local do reticle (posição da superfície)
       const pos = reticle.object3D.position.clone();
       const sphere = document.createElement('a-sphere');
       sphere.setAttribute('radius', '0.1');
