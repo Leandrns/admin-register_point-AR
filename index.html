@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<meta charset="utf-8" />
+		<title>Teste AR sem marcador</title>
+		<script src="https://aframe.io/releases/1.7.0/aframe.min.js"></script>
+	</head>
+	<body style="margin: 0; overflow: hidden">
+		<button
+			id="registerBtn"
+			style="position: fixed; top: 10px; left: 10px; z-index: 2"
+		>
+			Registrar Ponto
+		</button>
+
+		<a-scene
+			vr-mode-ui="enabled: false"
+			embedded
+			arjs="sourceType: webcam; debugUIEnabled: false;"
+			renderer="logarithmicDepthBuffer: true;"
+			webxr="optionalFeatures: hit-test; optionalFeatures: local-floor;"
+		>
+			<!-- Entidade onde serão adicionados os pontos -->
+			<a-entity id="pontos"></a-entity>
+
+			<!-- Câmera AR -->
+			<a-entity camera look-controls></a-entity>
+		</a-scene>
+
+		<script>
+			const pontosEl = document.getElementById("pontos");
+			const pontosRegistrados = [];
+
+			document.getElementById("registerBtn").addEventListener("click", () => {
+				const camera = document.querySelector("[camera]");
+				const pos = camera.object3D.position.clone();
+				const rot = camera.object3D.rotation.clone();
+
+				// Guarda em memória
+				pontosRegistrados.push({ x: pos.x, y: pos.y, z: pos.z, rotY: rot.y });
+
+				// Cria esfera no local registrado
+				const sphere = document.createElement("a-sphere");
+				sphere.setAttribute("radius", "0.1");
+				sphere.setAttribute("color", "blue");
+				sphere.setAttribute("position", `${pos.x} ${pos.y} ${pos.z}`);
+				pontosEl.appendChild(sphere);
+
+				console.log("Ponto registrado:", pontosRegistrados);
+			});
+		</script>
+	</body>
+</html>
