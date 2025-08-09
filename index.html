@@ -52,6 +52,9 @@
           // pontosEl.appendChild(sphere);
           document.querySelector('a-scene').appendChild(sphere);
 
+          sphere.object3D.position.set(pos.x, pos.y, pos.z);
+          sphere.object3D.updateMatrixWorld(true);
+
 
           console.log("Ponto registrado:", pontosRegistrados);
         } else {
