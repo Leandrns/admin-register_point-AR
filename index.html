@@ -34,9 +34,12 @@
         if (marker.object3D.visible) {
           // Pega a posição e rotação do marcador no mundo
           const pos = new THREE.Vector3();
-          const rot = new THREE.Euler();
+          const quaternion = new THREE.Quaternion();
           marker.object3D.getWorldPosition(pos);
-          marker.object3D.getWorldRotation(rot);
+          marker.object3D.getWorldQuaternion(quaternion);
+
+          const rot = new THREE.Euler();
+          rot.setFromQuaternion(quaternion);
 
           // Salva em memória
           pontosRegistrados.push({ x: pos.x, y: pos.y, z: pos.z, rotY: rot.y });
