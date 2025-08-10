@@ -244,7 +244,7 @@
       
       console.log('Sistema calibrado com QR Code:', qrData);
       
-      alert(`Calibração realizada!\nEncontrados ${pontosDoEvento.length} pontos salvos.\nEntre no modo AR para visualizá-los.`);
+      alert(`Calibração realizada!\nEntre no modo AR para visualizá-los.`);
     }
 
     function stopQRScanning() {
@@ -298,13 +298,6 @@
             // Primeira vez definindo o ponto de referência
             pontoReferencia.arPosition = new THREE.Vector3(0, 0, 0);
           }
-          
-          // Carregar pontos salvos sempre que iniciar uma nova sessão AR
-          setTimeout(() => {
-            carregarPontosSalvos();
-          }, 1000); // Aguarda um pouco para estabilizar o tracking
-          
-          console.log('Ponto de referência AR definido e pontos sendo carregados');
         }
       });
     }
