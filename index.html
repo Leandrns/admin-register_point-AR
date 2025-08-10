@@ -242,12 +242,7 @@
       calibrado = true;
       updateCalibrationUI();
       
-      // Mostrar quantos pontos salvos existem para este QR
-      const pontosSalvos = JSON.parse(localStorage.getItem('pontos') || '[]');
-      const pontosDoEvento = pontosSalvos.filter(p => p.qrReferencia === qrData);
-      
       console.log('Sistema calibrado com QR Code:', qrData);
-      console.log(`${pontosDoEvento.length} pontos encontrados para este evento`);
       
       alert(`Calibração realizada!\nEncontrados ${pontosDoEvento.length} pontos salvos.\nEntre no modo AR para visualizá-los.`);
     }
@@ -272,15 +267,8 @@
         statusEl.className = 'status-calibrado';
         calibrateBtn.textContent = 'Recalibrar';
         
-        // Mostrar informações do QR atual
-        const pontosSalvos = JSON.parse(localStorage.getItem('pontos') || '[]');
-        const pontosDoEvento = pontosSalvos.filter(p => 
-          pontoReferencia && p.qrReferencia === pontoReferencia.qrCode
-        );
-        
         document.getElementById('instructions').innerHTML = 
           `<strong>QR:</strong> ${pontoReferencia?.qrCode}<br>
-           <strong>Pontos salvos:</strong> ${pontosDoEvento.length}<br>
            Toque no retículo para criar novos cubos`;
       } else {
         statusEl.innerHTML = '❌ Não calibrado';
@@ -380,14 +368,6 @@
       salvarPonto(posicaoRelativa);
 
       pontosCreated++;
-      
-      // Atualizar contador considerando pontos carregados
-      const pontosSalvosTotal = JSON.parse(localStorage.getItem('pontos') || '[]')
-        .filter(p => p.qrReferencia === pontoReferencia.qrCode).length;
-      const novosTotal = pontosCreated - pontosCarregados.length;
-      
-      document.getElementById('points-count').textContent = 
-        `Pontos: ${pontosSalvosTotal} salvos + ${novosTotal} novos = ${pontosSalvosTotal + novosTotal} total`;
     }
 
     function calcularPosicaoRelativa(posicaoAR) {
@@ -416,11 +396,6 @@
       
       // Em uma implementação real, você enviaria para o backend:
       // await enviarPontoParaBackend(ponto);
-      
-      // Por enquanto, salva no localStorage para demonstração
-      const pontosSalvos = JSON.parse(localStorage.getItem('pontos') || '[]');
-      pontosSalvos.push(ponto);
-      localStorage.setItem('pontos', JSON.stringify(pontosSalvos));
     }
 
     function generateId() {
@@ -460,79 +435,6 @@
 
       renderer.render(scene, camera);
     }
-
-    function carregarPontosSalvos() {
-      if (!calibrado || !pontoReferencia) return;
-
-      const pontosSalvos = JSON.parse(localStorage.getItem('pontos') || '[]');
-      
-      // Filtrar pontos do mesmo QR Code de referência
-      const pontosDoEvento = pontosSalvos.filter(ponto => 
-        ponto.qrReferencia === pontoReferencia.qrCode
-      );
-
-      console.log(`Carregando ${pontosDoEvento.length} pontos salvos...`);
-
-      pontosDoEvento.forEach((ponto, index) => {
-        // Calcular posição absoluta a partir da relativa
-        const posicaoAbsoluta = new THREE.Vector3(
-          ponto.posicaoRelativa.x,
-          ponto.posicaoRelativa.y,
-          ponto.posicaoRelativa.z
-        );
-
-        // Adicionar ponto de referência atual
-        if (pontoReferencia.arPosition) {
-          posicaoAbsoluta.add(pontoReferencia.arPosition);
-        }
-
-        // Criar cubo visual
-        criarCuboCarregado(posicaoAbsoluta, ponto, index);
-      });
-
-      // Atualizar contador visual
-      const totalPontos = pontosDoEvento.length + (pontosCreated - pontosCarregados.length);
-      document.getElementById('points-count').textContent = 
-        `Pontos: ${pontosDoEvento.length} salvos + ${pontosCreated - pontosCarregados.length} novos = ${totalPontos} total`;
-    }
-
-    function criarCuboCarregado(posicao, dadosPonto, index) {
-      const boxGeo = new THREE.BoxGeometry(0.12, 0.12, 0.12);
-      
-      // Cor diferente para pontos carregados (mais escura)
-      const boxMat = new THREE.MeshStandardMaterial({ 
-        roughness: 0.8, 
-        metalness: 0.2,
-        color: new THREE.Color().setHSL((index * 0.1) % 1, 0.5, 0.4) // Cores mais escuras
-      });
-      
-      const box = new THREE.Mesh(boxGeo, boxMat);
-      box.position.copy(posicao);
-      
-      // Marcar como ponto carregado para não salvar novamente
-      box.userData = {
-        carregado: true,
-        dadosOriginais: dadosPonto
-      };
-      
-      scene.add(box);
-      pontosCarregados.push(box);
-      
-      console.log(`Cubo carregado na posição:`, posicao);
-    }
-
-	// Carregar informações ao inicializar página
-    window.addEventListener('load', () => {
-      const pontosSalvos = JSON.parse(localStorage.getItem('pontos') || '[]');
-      console.log('Pontos salvos encontrados:', pontosSalvos.length);
-      
-      // Se já temos pontos salvos, mostrar dica
-      if (pontosSalvos.length > 0) {
-        document.getElementById('instructions').innerHTML += 
-          '<br><br><em>💡 Pontos salvos encontrados! Calibre para visualizá-los.</em>';
-      }
-    });
-
   </script>
 </body>
 </html>
