@@ -6,230 +6,153 @@
 			name="viewport"
 			content="width=device-width,initial-scale=1,minimum-scale=1,viewport-fit=cover"
 		/>
-		<title>WebXR AR Hit Test + js-aruco Marker Detection</title>
+		<title>WebXR AR Hit Test com Calibração QR</title>
 		<style>
 			html,
 			body {
 				height: 100%;
 				margin: 0;
+				font-family: Arial, Helvetica, sans-serif;
 				background: #111;
 				color: #ddd;
-				font-family: Arial;
 			}
+
 			#info {
 				position: fixed;
 				left: 10px;
 				top: 10px;
-				z-index: 3;
-				background: rgba(0, 0, 0, 0.5);
-				padding: 10px;
+				z-index: 2;
+				background: rgba(0, 0, 0, 0.8);
+				padding: 15px;
 				border-radius: 8px;
-				max-width: 320px;
+				max-width: 300px;
 			}
-			#pontos {
-				position: fixed;
-				bottom: 10px;
-				left: 10px;
-				z-index: 3;
-				background: rgba(0, 0, 0, 0.5);
-				padding: 10px;
-				border-radius: 8px;
-				font-size: 12px;
-				max-width: 320px;
-				white-space: pre-wrap;
-			}
-			#aruco-overlay {
+
+			#qr-scanner {
 				position: fixed;
 				top: 0;
 				left: 0;
-				width: 100vw;
-				height: 100vh;
-				background: rgba(0, 0, 0, 0.85);
-				display: flex;
+				width: 100%;
+				height: 100%;
+				background: rgba(0, 0, 0, 0.9);
+				display: none;
+				z-index: 10;
 				flex-direction: column;
 				align-items: center;
 				justify-content: center;
-				color: white;
-				font-size: 18px;
-				z-index: 10;
 			}
-			video {
-				width: 320px;
-				height: 240px;
-				border: 2px solid #0f0;
-				border-radius: 10px;
+
+			#qr-video {
+				width: 80%;
+				max-width: 400px;
+				border-radius: 8px;
+			}
+
+			#qr-instructions {
+				color: #fff;
+				text-align: center;
+				margin: 20px;
+				font-size: 16px;
+				background: rgba(0, 0, 0, 0.7);
+				padding: 15px;
+				border-radius: 8px;
+			}
+
+			.btn {
+				background: #007bff;
+				color: #fff;
+				border: none;
+				padding: 12px 20px;
+				border-radius: 6px;
+				cursor: pointer;
+				margin: 5px;
+				font-size: 14px;
+			}
+
+			.btn:hover {
+				background: #0056b3;
+			}
+			.btn:disabled {
+				background: #666;
+				cursor: not-allowed;
+			}
+
+			#status {
+				position: fixed;
+				bottom: 20px;
+				left: 20px;
+				background: rgba(0, 0, 0, 0.8);
+				padding: 10px;
+				border-radius: 6px;
+				z-index: 5;
+			}
+
+			.status-calibrado {
+				color: #00ff00;
+			}
+			.status-nao-calibrado {
+				color: #ff6600;
+			}
+
+			canvas {
+				display: block;
 			}
 		</style>
 	</head>
 	<body>
-		<div id="aruco-overlay">
-			<div>Aponte a câmera para o marcador ArUco para calibrar a origem.</div>
-			<video id="aruco-video" playsinline></video>
-			<canvas id="aruco-canvas" style="display: none"></canvas>
-			<div style="margin-top: 10px; font-size: 14px; color: #0f0" id="aruco-result">
-				Aguardando marcador...
+		<div id="info">
+			<strong>WebXR AR com Calibração QR</strong><br />
+			<div id="calibration-status" class="status-nao-calibrado">❌ Não calibrado</div>
+			<button id="calibrate-btn" class="btn">Calibrar com QR Code</button>
+			<br /><br />
+			<div id="instructions">
+				1. Primeiro, faça a calibração<br />
+				2. Depois toque no retículo para criar cubos
 			</div>
-			<button id="start-ar-btn" style="margin-top: 10px; display: none">
-				Iniciar AR
-			</button>
 		</div>
 
-		<div id="info" style="display: none">
-			<strong>WebXR AR Hit Test + ArUco Marker</strong><br />
-			Toque no retículo para colocar um cubo.<br />
+		<!-- Scanner QR Code -->
+		<div id="qr-scanner">
+			<div id="qr-instructions">
+				<h3>Calibração do Sistema</h3>
+				<p>Aponte a câmera para o QR Code do evento.</p>
+				<p>Este QR deve estar no ponto de entrada ou referência do local.</p>
+			</div>
+			<video id="qr-video" autoplay muted playsinline></video>
+			<button id="cancel-qr" class="btn">Cancelar</button>
 		</div>
 
-		<div id="pontos">
-			<strong>Pontos salvos:</strong><br /><span id="listaPontos"></span>
+		<div id="status">
+			<div id="points-count">Pontos criados: 0</div>
 		</div>
+
+		<!-- QR Code Scanner Library -->
+		<script src="https://cdnjs.cloudflare.com/ajax/libs/jsqr/1.4.0/jsQR.js"></script>
 
 		<script type="module">
 			import * as THREE from "https://unpkg.com/three@0.148.0/build/three.module.js";
 			import { ARButton } from "https://unpkg.com/three@0.148.0/examples/jsm/webxr/ARButton.js";
 
-			// Import js-aruco (via CDN UMD) - usamos script tag abaixo para carregar global Aruco
-			// Mas aqui a gente vai fazer um truque pra importar (vai ter um <script> abaixo)
-
 			let camera, scene, renderer;
-			let controller, reticle;
+			let controller;
+			let reticle;
+
 			let hitTestSource = null;
 			let localReferenceSpace = null;
 
-			let marcadorOrigem = null; // THREE.Matrix4 da pose do marcador detectado
-			let pontosSalvos = [];
+			// Sistema de calibração
+			let pontoReferencia = null;
+			let calibrado = false;
+			let pontosCreated = 0;
 
-			const arucoOverlay = document.getElementById("aruco-overlay");
-			const arucoVideo = document.getElementById("aruco-video");
-			const arucoCanvas = document.getElementById("aruco-canvas");
-			const arucoCtx = arucoCanvas.getContext("2d");
-			const arucoResult = document.getElementById("aruco-result");
-			const startARBtn = document.getElementById("start-ar-btn");
-			const infoDiv = document.getElementById("info");
-			const listaPontosSpan = document.getElementById("listaPontos");
+			// QR Scanner
+			let qrStream = null;
+			let qrScanning = false;
 
-			let videoStream = null;
-			let scanning = false;
+			init();
+			animate();
 
-			// Parâmetros para detecção ArUco
-			const markerSize = 0.1; // tamanho real do marcador em metros (ajuste conforme seu marcador físico)
-
-			let detector, posit;
-
-			async function startArucoScanner() {
-				try {
-					videoStream = await navigator.mediaDevices.getUserMedia({
-						video: { facingMode: "environment" },
-					});
-					arucoVideo.srcObject = videoStream;
-					await arucoVideo.play();
-					scanning = true;
-
-					// Ajusta canvas para o tamanho do vídeo
-					arucoCanvas.width = arucoVideo.videoWidth;
-					arucoCanvas.height = arucoVideo.videoHeight;
-
-					detector = new AR.Detector();
-					posit = new POS.Posit(markerSize, arucoCanvas.width);
-
-					scanLoop();
-				} catch (e) {
-					arucoResult.textContent = "Erro ao acessar a câmera: " + e.message;
-				}
-			}
-
-			function stopArucoScanner() {
-				if (videoStream) {
-					videoStream.getTracks().forEach((track) => track.stop());
-					videoStream = null;
-				}
-				scanning = false;
-			}
-
-			function scanLoop() {
-				if (!scanning) return;
-				if (arucoVideo.readyState === arucoVideo.HAVE_ENOUGH_DATA) {
-					arucoCtx.drawImage(arucoVideo, 0, 0, arucoCanvas.width, arucoCanvas.height);
-					let imageData = arucoCtx.getImageData(
-						0,
-						0,
-						arucoCanvas.width,
-						arucoCanvas.height
-					);
-					let markers = detector.detect(imageData);
-
-					if (markers.length > 0) {
-						arucoResult.textContent = "Marcador detectado! ID: " + markers[0].id;
-
-						// Estimar pose
-						let corners = markers[0].corners;
-
-						// Corrigir coordenadas pois js-aruco usa origem diferente (embaixo à esquerda)
-						for (let i = 0; i < corners.length; i++) {
-							let corner = corners[i];
-							corner.x -= arucoCanvas.width / 2;
-							corner.y = arucoCanvas.height / 2 - corner.y;
-						}
-
-						let pose = posit.pose(corners);
-
-						// Montar matriz 4x4 do pose para three.js
-						marcadorOrigem = poseToMatrix(pose);
-
-						stopArucoScanner();
-
-						arucoOverlay.style.display = "none";
-						infoDiv.style.display = "block";
-						startARBtn.style.display = "inline-block";
-
-						return;
-					} else {
-						arucoResult.textContent = "Aguardando marcador...";
-					}
-				}
-				requestAnimationFrame(scanLoop);
-			}
-
-			function poseToMatrix(pose) {
-				// pose.bestRotation é array 3x3 (row major)
-				// pose.bestTranslation é array 3
-
-				const rot = pose.bestRotation;
-				const trans = pose.bestTranslation;
-
-				const mat = new THREE.Matrix4();
-
-				// construir matriz 4x4 manualmente
-				mat.set(
-					rot[0][0],
-					rot[0][1],
-					rot[0][2],
-					trans[0],
-					rot[1][0],
-					rot[1][1],
-					rot[1][2],
-					trans[1],
-					rot[2][0],
-					rot[2][1],
-					rot[2][2],
-					trans[2],
-					0,
-					0,
-					0,
-					1
-				);
-
-				// Ajuste do sistema de coordenadas (invertendo Y e Z) pode ser necessário conforme calibração
-
-				return mat;
-			}
-
-			startARBtn.addEventListener("click", () => {
-				startARBtn.style.display = "none";
-				initAR();
-				animate();
-			});
-
-			function initAR() {
+			function init() {
 				const container = document.createElement("div");
 				document.body.appendChild(container);
 
@@ -241,10 +164,16 @@
 					20
 				);
 
+				// Luzes
 				const light = new THREE.HemisphereLight(0xffffff, 0xbbbbff, 1);
 				light.position.set(0.5, 1, 0.25);
 				scene.add(light);
 
+				const directionalLight = new THREE.DirectionalLight(0xffffff, 0.5);
+				directionalLight.position.set(1, 1, 1);
+				scene.add(directionalLight);
+
+				// Renderer
 				renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
 				renderer.setPixelRatio(window.devicePixelRatio);
 				renderer.setSize(window.innerWidth, window.innerHeight);
@@ -255,6 +184,7 @@
 					ARButton.createButton(renderer, { requiredFeatures: ["hit-test"] })
 				);
 
+				// Reticle
 				const geometry = new THREE.RingGeometry(0.06, 0.08, 32).rotateX(-Math.PI / 2);
 				const material = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
 				reticle = new THREE.Mesh(geometry, material);
@@ -262,27 +192,164 @@
 				reticle.visible = false;
 				scene.add(reticle);
 
+				// Controller
 				controller = renderer.xr.getController(0);
 				controller.addEventListener("select", onSelect);
 				scene.add(controller);
 
+				// Event listeners
 				window.addEventListener("resize", onWindowResize);
-
 				renderer.xr.addEventListener("sessionstart", onSessionStart);
 				renderer.xr.addEventListener("sessionend", onSessionEnd);
+
+				// QR Calibration setup
+				setupQRCalibration();
+			}
+
+			function setupQRCalibration() {
+				const calibrateBtn = document.getElementById("calibrate-btn");
+				const cancelBtn = document.getElementById("cancel-qr");
+
+				calibrateBtn.addEventListener("click", startQRScanning);
+				cancelBtn.addEventListener("click", stopQRScanning);
+			}
+
+			async function startQRScanning() {
+				try {
+					const qrScanner = document.getElementById("qr-scanner");
+					const video = document.getElementById("qr-video");
+
+					qrScanner.style.display = "flex";
+					qrScanning = true;
+
+					// Acessar câmera
+					qrStream = await navigator.mediaDevices.getUserMedia({
+						video: { facingMode: "environment" }, // câmera traseira
+					});
+
+					video.srcObject = qrStream;
+					video.play();
+
+					// Iniciar scanning
+					scanQRCode(video);
+				} catch (error) {
+					console.error("Erro ao acessar câmera:", error);
+					alert("Não foi possível acessar a câmera");
+					stopQRScanning();
+				}
+			}
+
+			function scanQRCode(video) {
+				if (!qrScanning) return;
+
+				const canvas = document.createElement("canvas");
+				const context = canvas.getContext("2d");
+
+				function tick() {
+					if (!qrScanning) return;
+
+					if (video.readyState === video.HAVE_ENOUGH_DATA) {
+						canvas.width = video.videoWidth;
+						canvas.height = video.videoHeight;
+						context.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+						const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+						const code = jsQR(imageData.data, imageData.width, imageData.height);
+
+						if (code) {
+							// QR Code detectado!
+							processQRCode(code.data);
+							return;
+						}
+					}
+
+					requestAnimationFrame(tick);
+				}
+				tick();
+			}
+
+			function processQRCode(qrData) {
+				console.log("QR Code detectado:", qrData);
+
+				// Validar se é um QR Code de evento válido
+				if (
+					qrData.includes("QR") ||
+					qrData.includes("calibracao") ||
+					qrData.length > 5
+				) {
+					// Simular definição do ponto de referência
+					definirPontoReferencia(qrData);
+					stopQRScanning();
+				} else {
+					alert("QR Code inválido. Use um QR Code de evento válido.");
+				}
+			}
+
+			function definirPontoReferencia(qrData) {
+				// Definir ponto de referência baseado no QR Code
+				pontoReferencia = {
+					qrCode: qrData,
+					timestamp: Date.now(),
+					// Em uma implementação real, você salvaria a posição GPS aqui
+					gps: null,
+					// Posição será definida quando entrar em AR
+					arPosition: null,
+				};
+
+				calibrado = true;
+				updateCalibrationUI();
+
+				console.log("Sistema calibrado com QR Code:", qrData);
+				alert("Calibração realizada com sucesso!\nAgora você pode entrar no modo AR.");
+			}
+
+			function stopQRScanning() {
+				qrScanning = false;
+
+				if (qrStream) {
+					qrStream.getTracks().forEach((track) => track.stop());
+					qrStream = null;
+				}
+
+				document.getElementById("qr-scanner").style.display = "none";
+			}
+
+			function updateCalibrationUI() {
+				const statusEl = document.getElementById("calibration-status");
+				const calibrateBtn = document.getElementById("calibrate-btn");
+
+				if (calibrado) {
+					statusEl.innerHTML = "✅ Sistema Calibrado";
+					statusEl.className = "status-calibrado";
+					calibrateBtn.textContent = "Recalibrar";
+				} else {
+					statusEl.innerHTML = "❌ Não calibrado";
+					statusEl.className = "status-nao-calibrado";
+					calibrateBtn.textContent = "Calibrar com QR Code";
+				}
 			}
 
 			function onSessionStart() {
 				const session = renderer.xr.getSession();
 
-				session.requestReferenceSpace("viewer").then((viewerRefSpace) => {
-					session.requestHitTestSource({ space: viewerRefSpace }).then((source) => {
-						hitTestSource = source;
-					});
+				session.requestReferenceSpace("viewer").then(function (viewerReferenceSpace) {
+					session
+						.requestHitTestSource({ space: viewerReferenceSpace })
+						.then(function (source) {
+							hitTestSource = source;
+						});
 				});
 
-				session.requestReferenceSpace("local").then((refSpace) => {
+				session.requestReferenceSpace("local").then(function (refSpace) {
 					localReferenceSpace = refSpace;
+
+					// Se calibrado, definir posição de referência AR
+					if (calibrado && pontoReferencia && !pontoReferencia.arPosition) {
+						// Em uma implementação real, você faria o match com a posição física
+						// Por enquanto, vamos simular uma posição de referência
+						pontoReferencia.arPosition = new THREE.Vector3(0, 0, 0);
+						console.log("Ponto de referência AR definido");
+					}
 				});
 			}
 
@@ -290,50 +357,85 @@
 				hitTestSource = null;
 				localReferenceSpace = null;
 				reticle.visible = false;
-				pontosSalvos = [];
-				marcadorOrigem = null;
-				listaPontosSpan.textContent = "";
 			}
 
 			function onSelect() {
-				if (!reticle.visible) return;
-
-				const pos = new THREE.Vector3().setFromMatrixPosition(reticle.matrix);
-
-				// Salvar posição relativa ao marcadorOrigem (transformando posição global para local)
-				let posRelativa = pos.clone();
-
-				if (marcadorOrigem) {
-					// matriz inversa do marcador para transformar global -> local
-					const inversa = new THREE.Matrix4().copy(marcadorOrigem).invert();
-					posRelativa.applyMatrix4(inversa);
+				if (!calibrado) {
+					alert("Faça a calibração primeiro!");
+					return;
 				}
 
-				pontosSalvos.push(posRelativa);
-				alert(
-					`Posição salva:\nX: ${posRelativa.x.toFixed(2)}\nY: ${posRelativa.y.toFixed(
-						2
-					)}\nZ: ${posRelativa.z.toFixed(2)}`
-				);
+				if (!reticle.visible) return;
 
+				// Criar cubo
 				const boxGeo = new THREE.BoxGeometry(0.12, 0.12, 0.12);
 				const boxMat = new THREE.MeshStandardMaterial({
 					roughness: 0.7,
 					metalness: 0.0,
+					color: new THREE.Color().setHSL(Math.random(), 0.7, 0.5),
 				});
 				const box = new THREE.Mesh(boxGeo, boxMat);
-				box.position.copy(pos);
+
+				// Posicionar baseado no reticle
+				const position = new THREE.Vector3();
+				position.setFromMatrixPosition(reticle.matrix);
+
+				// Calcular posição relativa ao ponto de referência
+				const posicaoRelativa = calcularPosicaoRelativa(position);
+
+				box.position.copy(position);
 				scene.add(box);
+
+				// Salvar ponto (em uma implementação real, enviaria para backend)
+				salvarPonto(posicaoRelativa);
+
+				pontosCreated++;
+				document.getElementById(
+					"points-count"
+				).textContent = `Pontos criados: ${pontosCreated}`;
+			}
+
+			function calcularPosicaoRelativa(posicaoAR) {
+				if (!pontoReferencia || !pontoReferencia.arPosition) {
+					return posicaoAR.clone();
+				}
+
+				// Calcular posição relativa ao ponto de referência
+				return posicaoAR.clone().sub(pontoReferencia.arPosition);
+			}
+
+			function salvarPonto(posicaoRelativa) {
+				const ponto = {
+					id: generateId(),
+					posicaoRelativa: {
+						x: posicaoRelativa.x,
+						y: posicaoRelativa.y,
+						z: posicaoRelativa.z,
+					},
+					qrReferencia: pontoReferencia.qrCode,
+					timestamp: Date.now(),
+					tipo: "cubo",
+				};
+
+				console.log("Ponto salvo:", ponto);
+
+				// Em uma implementação real, você enviaria para o backend:
+				// await enviarPontoParaBackend(ponto);
+
+				// Por enquanto, salva no localStorage para demonstração
+				const pontosSalvos = JSON.parse(localStorage.getItem("pontos") || "[]");
+				pontosSalvos.push(ponto);
+				localStorage.setItem("pontos", JSON.stringify(pontosSalvos));
+			}
+
+			function generateId() {
+				return Date.now().toString(36) + Math.random().toString(36).substr(2);
 			}
 
 			function onWindowResize() {
-				if (camera) {
-					camera.aspect = window.innerWidth / window.innerHeight;
-					camera.updateProjectionMatrix();
-				}
-				if (renderer) {
-					renderer.setSize(window.innerWidth, window.innerHeight);
-				}
+				camera.aspect = window.innerWidth / window.innerHeight;
+				camera.updateProjectionMatrix();
+				renderer.setSize(window.innerWidth, window.innerHeight);
 			}
 
 			function animate() {
@@ -346,25 +448,29 @@
 
 					if (hitTestSource && referenceSpace) {
 						const hitTestResults = frame.getHitTestResults(hitTestSource);
+
 						if (hitTestResults.length > 0) {
 							const hit = hitTestResults[0];
 							const pose = hit.getPose(referenceSpace);
-							reticle.visible = true;
-							reticle.matrix.fromArray(pose.transform.matrix);
+
+							reticle.visible = calibrado; // só mostra se calibrado
+							if (calibrado) {
+								reticle.matrix.fromArray(pose.transform.matrix);
+							}
 						} else {
 							reticle.visible = false;
 						}
 					}
 				}
+
 				renderer.render(scene, camera);
 			}
 
-			// Inicia o scanner ArUco no carregamento
-			startArucoScanner();
+			// Carregar pontos salvos ao iniciar (demonstração)
+			window.addEventListener("load", () => {
+				const pontosSalvos = JSON.parse(localStorage.getItem("pontos") || "[]");
+				console.log("Pontos salvos encontrados:", pontosSalvos.length);
+			});
 		</script>
-
-		<!-- Import js-aruco e posit.js via CDN -->
-		<script src="https://cdn.jsdelivr.net/gh/jcmellado/js-aruco@master/build/aruco.js"></script>
-		<script src="https://cdn.jsdelivr.net/gh/jcmellado/js-aruco@master/build/posit1.js"></script>
 	</body>
 </html>
