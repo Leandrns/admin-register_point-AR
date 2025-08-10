@@ -127,7 +127,7 @@
 		</div>
 
 		<!-- QR Code Scanner Library -->
-		<script src="https://cdnjs.cloudflare.com/ajax/libs/jsqr/1.4.0/jsQR.js"></script>
+		<script src="https://unpkg.com/jsqr/dist/jsQR.js"></script>
 
 		<script type="module">
 			import * as THREE from "https://unpkg.com/three@0.148.0/build/three.module.js";
@@ -272,17 +272,17 @@
 				console.log("QR Code detectado:", qrData);
 
 				// Validar se é um QR Code de evento válido
-				if (
-					qrData.includes("QR") ||
-					qrData.includes("calibracao") ||
-					qrData.length > 5
-				) {
+				// if (
+				// 	qrData.includes("QR") ||
+				// 	qrData.includes("calibracao") ||
+				// 	qrData.length > 5
+				// ) {
 					// Simular definição do ponto de referência
 					definirPontoReferencia(qrData);
 					stopQRScanning();
-				} else {
-					alert("QR Code inválido. Use um QR Code de evento válido.");
-				}
+				// } else {
+				// 	alert("QR Code inválido. Use um QR Code de evento válido.");
+				// }
 			}
 
 			function definirPontoReferencia(qrData) {
